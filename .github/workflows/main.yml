@@ -29,7 +29,9 @@ jobs:
       - name: Make Zip
         run: |
           cd ${GITHUB_WORKSPACE}
+          cat out/arch/arm/boot/zImage out/arch/arm/boot/dts/mt6739.dtb > zImage-dtb
           cd out/arch/arm/boot
+          mv zImage-dtb zImage
           export DEVICE_NAME=SM-A022F
           zip -r9 ${DEVICE_NAME}-${{ steps.props.outputs.date }}.zip zImage
           cp *.zip ${{ github.workspace }}/.
