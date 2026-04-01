@@ -59,12 +59,13 @@ ifeq ($(CONFIG_SEC_FACTORY),y)
 	obj-$(CONFIG_USB_F_MTP) += usb_f_mtp.o
 else
 ifeq ($(CONFIG_USB_ANDROID_SAMSUNG_COMPOSITE),y)
-	usb_f__.o
-	obj-$(CONFIG_USB_F_MTP) += usb_f_
+	# Baris 62 yang bener harusnya begini:
+	usb_f_mtp-y             := f_mtp.o
+	obj-$(CONFIG_USB_F_MTP) += usb_f_mtp.o
 else
 	usb_f_mtp-y             := f_mtp.o
-        obj-$(CONFIG_USB_F_MTP) += usb_f_mtp.o
-endif		
+	obj-$(CONFIG_USB_F_MTP) += usb_f_mtp.o
+endif	
 endif
 usb_f_ptp-y                     := f_ptp.o
 obj-$(CONFIG_USB_F_PTP)         += usb_f_ptp.o
