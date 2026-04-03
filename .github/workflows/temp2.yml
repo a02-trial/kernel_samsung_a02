@@ -24,12 +24,13 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache libarchive-tools
           
-      - name: Download Toolchain (AOSP GCC 10.x)
+      - name: Download Toolchain (AOSP GCC 4.9)
         run: |
           mkdir -p toolchain
           cd toolchain
-          git clone --depth 1 https://github.com/noverse-kernel/gcc-arm-linux-gnueabi-10.x gcc-arm
-          git clone --depth 1 https://github.com/noverse-kernel/gcc-aarch64-linux-gnu-10.x gcc-aarch64
+          # GCC 4.9 dari LineageOS (Paling stabil buat ARM32/64)
+          git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc-arm
+          git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
 
       - name: Start Building Kernel
