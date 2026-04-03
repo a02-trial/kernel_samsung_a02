@@ -1,4 +1,4 @@
-name: Build RooXie Kernel (AOSP Clang A10 Full)
+name: Build RooXie Kernel (Pure GCC AOSP)
 
 on:
   workflow_dispatch:
@@ -24,51 +24,36 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache libarchive-tools
           
-      - name: Download Toolchain (AOSP Clang & GCC 4.9)
+      - name: Download Toolchain (AOSP GCC 4.9)
         run: |
           mkdir -p toolchain
           cd toolchain
-          # Clang r353983c - Standar Android 10
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android10-release/clang-r353983c.tar.gz
-          tar -xf clang-r353983c.tar.gz
-          
-          # GCC 4.9 Pendamping (ARM 32 & 64)
+          # GCC 4.9 dari LineageOS (Paling stabil buat ARM32/64)
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc-arm
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
 
       - name: Start Building Kernel
         run: |
-          # Setup Path
-          CLANG_PATH="${{ github.workspace }}/toolchain/bin"
+          # Setup Path GCC
           GCC64_PATH="${{ github.workspace }}/toolchain/gcc-aarch64/bin"
           GCC32_PATH="${{ github.workspace }}/toolchain/gcc-arm/bin"
-          export PATH="$CLANG_PATH:$GCC64_PATH:$GCC32_PATH:$PATH"
+          export PATH="$GCC64_PATH:$GCC32_PATH:$PATH"
           
           export KBUILD_BUILD_USER="${{ github.actor }}"
           export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
           
-          # JURUS PAMUNGKAS: KCFLAGS=-Qunused-arguments
-          # Ini biar Clang cuekin bendera GCC kayak -mapcs atau -mno-sched-prolog
+          # PAKE PURE GCC (No Clang, No Error -mapcs)
+          # Kita pake arm-linux-androideabi- buat CROSS_COMPILE
           export OPTS="ARCH=arm \
                        O=out \
-                       CC=clang \
-                       CLANG_TRIPLE=arm-linux-gnueabi- \
                        CROSS_COMPILE=arm-linux-androideabi- \
-                       CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-                       LD=ld.lld \
-                       AR=llvm-ar \
-                       NM=llvm-nm \
-                       OBJCOPY=llvm-objcopy \
-                       OBJDUMP=llvm-objdump \
-                       STRIP=llvm-strip \
-                       KCFLAGS=-Qunused-arguments \
-                       KCPPFLAGS=-Qunused-arguments"
+                       CROSS_COMPILE_ARM32=arm-linux-androideabi-"
 
-          # 1. Config (Ganti a02_defconfig kalo nama filenya beda)
+          # 1. Config
           make $OPTS a02_defconfig
           
-          # 2. Build (Pakai semua CPU runner)
+          # 2. Build (Tanpa Clang biar gak rewel)
           make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
 
       - name: Set Properties
@@ -79,19 +64,18 @@ jobs:
         run: |
           mkdir -p ${{ github.workspace }}/final_output
           
-          # Copy pake -L biar file 'padet' (bukan symlink)
+          # Gunakan -L (Follow Symlink) biar file padet
           if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
             cp -L out/arch/arm/boot/zImage-dtb ${{ github.workspace }}/final_output/zImage-dtb
             
-            # Cek ukuran (kalo 0 byte, auto-failed)
             SIZE=$(stat -c%s "${{ github.workspace }}/final_output/zImage-dtb")
-            echo "✅ zImage-dtb ditemukan! Size: $SIZE bytes"
+            echo "✅ zImage-dtb READY! Size: $SIZE bytes"
             if [ "$SIZE" -lt 5000000 ]; then
-               echo "❌ Error: File zonk/kosong!"
+               echo "❌ Error: File masih zonk (terlalu kecil)!"
                exit 1
             fi
           else
-            echo "❌ Error: zImage-dtb tidak ter-generate!"
+            echo "❌ ERROR: zImage-dtb GAK KELUAR! Cek build.log"
             exit 1
           fi
 
@@ -101,13 +85,9 @@ jobs:
           export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
           export DATE_STR=${{ steps.props.outputs.date }}
           
-          # Zip -9 (Maksimal Kompresi)
           zip -9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
-          
-          # List isi zip buat bukti di log
           unzip -l ${DEVICE_NAME}-${DATE_STR}.zip
           
-          # Pindah ke workspace root
           cp *.zip ${{ github.workspace }}/
 
       - name: Upload Release
@@ -120,6 +100,6 @@ jobs:
           body: |
             ## Build Summary
             - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
-            - **Compiler**: AOSP Clang r353983c (A10)
-            - **Fixes**: Unused arguments suppressed (`-Qunused-arguments`)
-            - **Build Date**: ${{ steps.props.outputs.date }}
+            - **Compiler**: Pure AOSP GCC 4.9 (Stable)
+            - **Fixes**: No more Clang flag errors.
+            - **Date**: ${{ steps.props.outputs.date }}
