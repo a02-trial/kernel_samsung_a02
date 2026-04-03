@@ -28,14 +28,14 @@ jobs:
         run: |
           mkdir -p toolchain
           cd toolchain
-          # GCC 4.9 dari LineageOS (Paling stabil buat ARM32/64)
+          # GCC 4.9 dari LineageOS (The Real Legend)
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc-arm
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
 
       - name: Start Building Kernel
         run: |
-          # Setup Path
+          # Setup Path GCC sesuai struktur loe
           GCC64_PATH="${{ github.workspace }}/toolchain/gcc-aarch64/bin"
           GCC32_PATH="${{ github.workspace }}/toolchain/gcc-arm/bin"
           export PATH="$GCC64_PATH:$GCC32_PATH:$PATH"
@@ -43,33 +43,32 @@ jobs:
           export KBUILD_BUILD_USER="${{ github.actor }}"
           export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
           
+          # PAKE PURE GCC (No Clang, No Error -mapcs)
           export OPTS="ARCH=arm \
                        O=out \
-                       CROSS_COMPILE=arm-linux-gnueabi- \
-                       CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                       CROSS_COMPILE=arm-linux-androideabi- \
+                       CROSS_COMPILE_ARM32=arm-linux-androideabi- \
                        KCFLAGS=-w"
 
           # 1. Config
           make $OPTS a02_defconfig
           
-          # 2. DISABLE SELINUX (The Permissive Secret)
-          sed -i 's/CONFIG_SECURITY_SELINUX=y/CONFIG_SECURITY_SELINUX=n/g' out/.config || true
-          echo "CONFIG_SECURITY_SELINUX=n" >> out/.config
-          
-          # 3. FORCE REBOOT & WATCHDOG LOGIC
-          # Memastikan kernel punya "tenaga" buat restart hardware
+          # 2. SUNTIK CONFIG (Biar Gak Bootloop & Auto Reboot Lanjay)
+          # Matiin SELinux biar Permissive
+          scripts/config --file out/.config --disable CONFIG_SECURITY_SELINUX
+          # Aktifin Watchdog & Reboot Logic MediaTek
           scripts/config --file out/.config --enable CONFIG_MTK_WD_KICKER
           scripts/config --file out/.config --enable CONFIG_MTK_REBOOT_REASON
-          scripts/config --file out/.config --enable CONFIG_ARM_PSCI
+          scripts/config --file out/.config --set-val CONFIG_PANIC_TIMEOUT 5
           
-          # 4. Build Kernel
+          # 3. Hajar Build
           make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
 
       - name: Set Properties
         id: props
         run: echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
 
-      - name: Make Artifact & Verify
+      - name: Make Artifact & Verify Size
         run: |
           mkdir -p ${{ github.workspace }}/final_output
           if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
@@ -77,31 +76,29 @@ jobs:
             SIZE=$(stat -c%s "${{ github.workspace }}/final_output/zImage-dtb")
             echo "✅ zImage-dtb READY! Size: $SIZE bytes"
             if [ "$SIZE" -lt 5000000 ]; then
-               echo "❌ Error: File zonk!"
+               echo "❌ Error: File terlalu kecil!"
                exit 1
             fi
           else
-            echo "❌ ERROR: Kernel build failed!"
+            echo "❌ ERROR: zImage-dtb GAK KELUAR!"
             exit 1
           fi
 
       - name: Final Packing (Zip)
         run: |
           cd ${{ github.workspace }}/final_output
-          export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
-          export DATE_STR=${{ steps.props.outputs.date }}
-          zip -9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
+          zip -9 ${{ github.event.inputs.DEVICE_NAME }}-${{ steps.props.outputs.date }}.zip zImage-dtb
           cp *.zip ${{ github.workspace }}/
 
       - name: Upload Release
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "${{ github.workspace }}/*.zip"
-          name: RooXie Kernel B3-REBOOT-FINAL - ${{ steps.props.outputs.date }}
+          name: RooXie Kernel B3-Final-Fixed - ${{ steps.props.outputs.date }}
           tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ## Final Progress
-            - **Status**: Booting Normal, MTP & dt2w OK
-            - **Fix Attempt**: Added MTK Reboot Reason & ARM PSCI Config
-            - **Compiler**: GCC 10.x AOSP
+            ## 🎉 The Final Masterpiece
+            - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
+            - **Compiler**: Pure GCC 4.9 (Proven Success)
+            - **Fixes**: SELinux Disabled, Reboot Logic Added, MTP & dt2w OK.
