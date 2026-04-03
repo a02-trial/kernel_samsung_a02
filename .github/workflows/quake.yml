@@ -94,11 +94,11 @@ jobs:
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "${{ github.workspace }}/*.zip"
-          name: RooXie Kernel B3-Final-Fixed - ${{ steps.props.outputs.date }}
+          name: Quake Kernel Fixed - ${{ steps.props.outputs.date }}
           tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ## 🎉 The Final Masterpiece
+            ## 🎉 The Final Build
             - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
             - **Compiler**: Pure GCC 4.9 (Proven Success)
             - **Fixes**: SELinux Disabled, Reboot Logic Added, MTP & dt2w OK.
