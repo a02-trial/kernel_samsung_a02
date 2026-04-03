@@ -1,4 +1,4 @@
-name: Build
+name: Build Quake Kernel
 
 on:
   workflow_dispatch:
@@ -43,7 +43,7 @@ jobs:
           export KBUILD_BUILD_USER="${{ github.actor }}"
           export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
           
-          # PAKE PURE GCC (No Clang, No Error -mapcs)
+          # PAKE PURE GCC (Proven Success)
           export OPTS="ARCH=arm \
                        O=out \
                        CROSS_COMPILE=arm-linux-androideabi- \
@@ -53,13 +53,20 @@ jobs:
           # 1. Config
           make $OPTS a02_defconfig
           
-          # 2. SUNTIK CONFIG (Biar Gak Bootloop & Auto Reboot Lanjay)
-          # Matiin SELinux biar Permissive
+          # 2. SUNTIK CONFIG (PENYESUAIAN REBOOT & PERMISSIVE)
+          # Permissive Mode
           scripts/config --file out/.config --disable CONFIG_SECURITY_SELINUX
-          # Aktifin Watchdog & Reboot Logic MediaTek
+          
+          # Reboot Fix: Aktifin Watchdog & PSCI (Standard ARM Reset)
+          scripts/config --file out/.config --enable CONFIG_ARM_PSCI
+          scripts/config --file out/.config --enable CONFIG_ARM_PSCI_FW
           scripts/config --file out/.config --enable CONFIG_MTK_WD_KICKER
           scripts/config --file out/.config --enable CONFIG_MTK_REBOOT_REASON
+          
+          # Panic Handling: Kalo hang pas reboot, paksa restart dlm 5 detik
           scripts/config --file out/.config --set-val CONFIG_PANIC_TIMEOUT 5
+          scripts/config --file out/.config --enable CONFIG_PANIC_ON_REBOOT
+          scripts/config --file out/.config --enable CONFIG_MAGIC_SYSRQ
           
           # 3. Hajar Build
           make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
@@ -94,11 +101,12 @@ jobs:
         uses: ncipollo/release-action@v1.12.0
         with:
           artifacts: "${{ github.workspace }}/*.zip"
-          name: Quake Kernel Fixed - ${{ steps.props.outputs.date }}
+          name: Quake Kernel B3-Final - ${{ steps.props.outputs.date }}
           tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ## 🎉 The Final Build
+            ## 🎉 Quake Kernel (Android 10 Base)
             - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
-            - **Compiler**: Pure GCC 4.9 (Proven Success)
-            - **Fixes**: SELinux Disabled, Reboot Logic Added, MTP & dt2w OK.
+            - **Compiler**: Pure GCC 4.9 LineageOS
+            - **Status**: Booting OK, MTP OK, dt2w OK
+            - **Fixes**: SELinux Disabled (Permissive), ARM PSCI Reset Logic enabled.
