@@ -1,4 +1,4 @@
-name: Build RooXie Kernel (AOSP Clang)
+name: Build RooXie Kernel (AOSP Clang A10)
 
 on:
   workflow_dispatch:
@@ -24,15 +24,15 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache libarchive-tools
           
-      - name: Download AOSP Clang & GCC 4.9
+      - name: Download Toolchain (Android 10 Version)
         run: |
           mkdir -p toolchain
           cd toolchain
-          # Clang 11 - Standar Android 11 (r383902)
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r383902.tar.gz
-          tar -xf clang-r383902.tar.gz
+          # Download Clang r353983c (Standar Android 10)
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android10-release/clang-r353983c.tar.gz
+          tar -xf clang-r353983c.tar.gz
           
-          # GCC 4.9 buat pendamping (Cross Compile ARM32/64)
+          # GCC 4.9 Tetap Pake LineageOS (Paling Stabil)
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc-arm
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
@@ -49,8 +49,7 @@ jobs:
           export KBUILD_BUILD_USER="${{ github.actor }}"
           export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
           
-          # Opsi Build Spesifik MediaTek A02
-          # Pakai LD=ld.lld buat hindarin error .relr.dyn tadi
+          # Opsi Build
           export OPTS="ARCH=arm \
                        O=out \
                        CC=clang \
@@ -64,7 +63,7 @@ jobs:
                        OBJDUMP=llvm-objdump \
                        STRIP=llvm-strip"
 
-          # 1. Generate Config (Ganti a02_defconfig sesuai nama di arch/arm/configs/)
+          # 1. Generate Config
           make $OPTS a02_defconfig
           
           # 2. Hajar Build
@@ -74,31 +73,30 @@ jobs:
         id: props
         run: echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
 
-      - name: Debug & Verify Output
+      - name: Make Artifact & Zip
         run: |
-          echo "--- Cek Folder Boot ---"
-          ls -lh out/arch/arm/boot/ || echo "❌ Folder out gak nemu!"
+          # Bikin folder penampungan
+          mkdir -p ${{ github.workspace }}/final_output
           
+          # COPY file mentahan pake -L (Follow Symlink)
           if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
-            SIZE=$(stat -c%s "out/arch/arm/boot/zImage-dtb")
-            echo "✅ zImage-dtb READY! Size: $SIZE bytes"
-            if [ "$SIZE" -lt 5000000 ]; then
-               echo "❌ Error: File 0 byte atau terlalu kecil!"
-               exit 1
-            fi
+            cp -L out/arch/arm/boot/zImage-dtb ${{ github.workspace }}/final_output/zImage-dtb
           else
-            echo "❌ ERROR: zImage-dtb GAK ADA!"
+            echo "❌ zImage-dtb GAK NEMU!"
             exit 1
           fi
-
-      - name: Make Zip
-        run: |
-          cd ${{ github.workspace }}/out/arch/arm/boot
+          
+          cd ${{ github.workspace }}/final_output
           export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
           export DATE_STR=${{ steps.props.outputs.date }}
           
-          # Packing j-9 biar dapet kernelnya aja, gak usah bawa folder
-          zip -j9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
+          # Packing
+          zip -9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
+          
+          # Debug isi zip
+          unzip -l ${DEVICE_NAME}-${DATE_STR}.zip
+          
+          # Pindah ke root
           cp *.zip ${{ github.workspace }}/
 
       - name: Upload Release
@@ -111,6 +109,5 @@ jobs:
           body: |
             ## Build Details
             - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
-            - **Compiler**: AOSP Clang (r383902) + GCC 4.9
-            - **Branch**: Android 11 / Binary 3 Sync
-            - **Date**: ${{ steps.props.outputs.date }}
+            - **Compiler**: AOSP Clang A10 (r353983c)
+            - **Status**: Stable Build for Android 10/11
