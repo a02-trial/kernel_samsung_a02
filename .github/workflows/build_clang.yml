@@ -1,4 +1,4 @@
-name: Build RooXie Kernel (AOSP Clang A10)
+name: Build RooXie Kernel (AOSP Clang A10 Full)
 
 on:
   workflow_dispatch:
@@ -24,32 +24,32 @@ jobs:
           sudo apt update
           sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache libarchive-tools
           
-      - name: Download Toolchain (Android 10 Version)
+      - name: Download Toolchain (AOSP Clang & GCC 4.9)
         run: |
           mkdir -p toolchain
           cd toolchain
-          # Download Clang r353983c (Standar Android 10)
+          # Clang r353983c - Standar Android 10
           wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android10-release/clang-r353983c.tar.gz
           tar -xf clang-r353983c.tar.gz
           
-          # GCC 4.9 Tetap Pake LineageOS (Paling Stabil)
+          # GCC 4.9 Pendamping (ARM 32 & 64)
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc-arm
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
 
       - name: Start Building Kernel
         run: |
-          # Setup Path Toolchain
+          # Setup Path
           CLANG_PATH="${{ github.workspace }}/toolchain/bin"
           GCC64_PATH="${{ github.workspace }}/toolchain/gcc-aarch64/bin"
           GCC32_PATH="${{ github.workspace }}/toolchain/gcc-arm/bin"
           export PATH="$CLANG_PATH:$GCC64_PATH:$GCC32_PATH:$PATH"
           
-          # Identity
           export KBUILD_BUILD_USER="${{ github.actor }}"
           export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
           
-          # Opsi Build
+          # JURUS PAMUNGKAS: KCFLAGS=-Qunused-arguments
+          # Ini biar Clang cuekin bendera GCC kayak -mapcs atau -mno-sched-prolog
           export OPTS="ARCH=arm \
                        O=out \
                        CC=clang \
@@ -61,42 +61,53 @@ jobs:
                        NM=llvm-nm \
                        OBJCOPY=llvm-objcopy \
                        OBJDUMP=llvm-objdump \
-                       STRIP=llvm-strip"
+                       STRIP=llvm-strip \
+                       KCFLAGS=-Qunused-arguments \
+                       KCPPFLAGS=-Qunused-arguments"
 
-          # 1. Generate Config
+          # 1. Config (Ganti a02_defconfig kalo nama filenya beda)
           make $OPTS a02_defconfig
           
-          # 2. Hajar Build
+          # 2. Build (Pakai semua CPU runner)
           make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
 
       - name: Set Properties
         id: props
         run: echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
 
-      - name: Make Artifact & Zip
+      - name: Make Artifact & Verify Size
         run: |
-          # Bikin folder penampungan
           mkdir -p ${{ github.workspace }}/final_output
           
-          # COPY file mentahan pake -L (Follow Symlink)
+          # Copy pake -L biar file 'padet' (bukan symlink)
           if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
             cp -L out/arch/arm/boot/zImage-dtb ${{ github.workspace }}/final_output/zImage-dtb
+            
+            # Cek ukuran (kalo 0 byte, auto-failed)
+            SIZE=$(stat -c%s "${{ github.workspace }}/final_output/zImage-dtb")
+            echo "✅ zImage-dtb ditemukan! Size: $SIZE bytes"
+            if [ "$SIZE" -lt 5000000 ]; then
+               echo "❌ Error: File zonk/kosong!"
+               exit 1
+            fi
           else
-            echo "❌ zImage-dtb GAK NEMU!"
+            echo "❌ Error: zImage-dtb tidak ter-generate!"
             exit 1
           fi
-          
+
+      - name: Final Packing (Zip)
+        run: |
           cd ${{ github.workspace }}/final_output
           export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
           export DATE_STR=${{ steps.props.outputs.date }}
           
-          # Packing
+          # Zip -9 (Maksimal Kompresi)
           zip -9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
           
-          # Debug isi zip
+          # List isi zip buat bukti di log
           unzip -l ${DEVICE_NAME}-${DATE_STR}.zip
           
-          # Pindah ke root
+          # Pindah ke workspace root
           cp *.zip ${{ github.workspace }}/
 
       - name: Upload Release
@@ -107,7 +118,8 @@ jobs:
           tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
           token: ${{ secrets.GITHUB_TOKEN }}
           body: |
-            ## Build Details
+            ## Build Summary
             - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
-            - **Compiler**: AOSP Clang A10 (r353983c)
-            - **Status**: Stable Build for Android 10/11
+            - **Compiler**: AOSP Clang r353983c (A10)
+            - **Fixes**: Unused arguments suppressed (`-Qunused-arguments`)
+            - **Build Date**: ${{ steps.props.outputs.date }}
