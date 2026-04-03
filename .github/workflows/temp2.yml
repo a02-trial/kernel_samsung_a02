@@ -1,0 +1,106 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      DEVICE_NAME:
+        description: 'Nama HP (Contoh: SM-A022F)'
+        required: true
+        default: 'SM-A022F'
+
+jobs:
+  building-kernel:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache libarchive-tools
+          
+      - name: Download Toolchain (AOSP GCC 10.x)
+        run: |
+          mkdir -p toolchain
+          cd toolchain
+          git clone --depth 1 https://github.com/noverse-kernel/gcc-arm-linux-gnueabi-10.x gcc-arm
+          git clone --depth 1 https://github.com/noverse-kernel/gcc-aarch64-linux-gnu-10.x gcc-aarch64
+          cd ..
+
+      - name: Start Building Kernel
+        run: |
+          # Setup Path
+          GCC64_PATH="${{ github.workspace }}/toolchain/gcc-aarch64/bin"
+          GCC32_PATH="${{ github.workspace }}/toolchain/gcc-arm/bin"
+          export PATH="$GCC64_PATH:$GCC32_PATH:$PATH"
+          
+          export KBUILD_BUILD_USER="${{ github.actor }}"
+          export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
+          
+          export OPTS="ARCH=arm \
+                       O=out \
+                       CROSS_COMPILE=arm-linux-gnueabi- \
+                       CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                       KCFLAGS=-w"
+
+          # 1. Config
+          make $OPTS a02_defconfig
+          
+          # 2. DISABLE SELINUX (The Permissive Secret)
+          sed -i 's/CONFIG_SECURITY_SELINUX=y/CONFIG_SECURITY_SELINUX=n/g' out/.config || true
+          echo "CONFIG_SECURITY_SELINUX=n" >> out/.config
+          
+          # 3. FORCE REBOOT & WATCHDOG LOGIC
+          # Memastikan kernel punya "tenaga" buat restart hardware
+          scripts/config --file out/.config --enable CONFIG_MTK_WD_KICKER
+          scripts/config --file out/.config --enable CONFIG_MTK_REBOOT_REASON
+          scripts/config --file out/.config --enable CONFIG_ARM_PSCI
+          
+          # 4. Build Kernel
+          make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
+
+      - name: Set Properties
+        id: props
+        run: echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
+
+      - name: Make Artifact & Verify
+        run: |
+          mkdir -p ${{ github.workspace }}/final_output
+          if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
+            cp -L out/arch/arm/boot/zImage-dtb ${{ github.workspace }}/final_output/zImage-dtb
+            SIZE=$(stat -c%s "${{ github.workspace }}/final_output/zImage-dtb")
+            echo "✅ zImage-dtb READY! Size: $SIZE bytes"
+            if [ "$SIZE" -lt 5000000 ]; then
+               echo "❌ Error: File zonk!"
+               exit 1
+            fi
+          else
+            echo "❌ ERROR: Kernel build failed!"
+            exit 1
+          fi
+
+      - name: Final Packing (Zip)
+        run: |
+          cd ${{ github.workspace }}/final_output
+          export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
+          export DATE_STR=${{ steps.props.outputs.date }}
+          zip -9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
+          cp *.zip ${{ github.workspace }}/
+
+      - name: Upload Release
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "${{ github.workspace }}/*.zip"
+          name: RooXie Kernel B3-REBOOT-FINAL - ${{ steps.props.outputs.date }}
+          tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## Final Progress
+            - **Status**: Booting Normal, MTP & dt2w OK
+            - **Fix Attempt**: Added MTK Reboot Reason & ARM PSCI Config
+            - **Compiler**: GCC 10.x AOSP
