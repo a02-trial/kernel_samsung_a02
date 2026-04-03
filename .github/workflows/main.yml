@@ -26,6 +26,14 @@ jobs:
         run: |
           echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
        
+      - name: Debug Output Files
+        run: |
+          cd ${GITHUB_WORKSPACE}
+          echo "--- Cek isi folder boot ---"
+          ls -lh out/arch/arm/boot/
+          echo "--- Cek isi folder DTS (Cari file .dtb) ---"
+          ls -lh out/arch/arm/boot/dts/mt6739*.dtb || echo "❌ File DTB GAK ADA!"
+          
       - name: Make Zip
         run: |
           cd ${GITHUB_WORKSPACE}
