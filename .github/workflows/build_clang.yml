@@ -1,0 +1,106 @@
+name: Build RooXie Kernel (Proton Clang)
+
+on:
+  workflow_dispatch:
+    inputs:
+      DEVICE_NAME:
+        description: 'Nama HP (Contoh: SM-A022F)'
+        required: true
+        default: 'SM-A022F'
+
+jobs:
+  building-kernel:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential bc libssl-dev libfl-dev curl git wget zip ccache
+          
+      - name: Download Proton Clang
+        run: |
+          # Clone Proton Clang (ambil history dikit aja biar cepet)
+          git clone --depth 1 https://github.com/kdrag0n/proton-clang.git ${{ github.workspace }}/proton-clang
+
+      - name: Start Building Kernel
+        run: |
+          # 1. Masuk ke Workspace
+          cd ${{ github.workspace }}
+          
+          # 2. Setup Variable Toolchain
+          TC_PATH="${{ github.workspace }}/proton-clang/bin"
+          export PATH="$TC_PATH:$PATH"
+          
+          # 3. Setup Kbuild Identity
+          export KBUILD_BUILD_USER="${{ github.actor }}"
+          export KBUILD_BUILD_HOST="${{ github.event.inputs.DEVICE_NAME }}"
+          
+          # 4. Argumen Build (Proton Clang Standar)
+          # Kita pake CC=clang dan CROSS_COMPILE buat binutils-nya
+          export OPTS="ARCH=arm \
+                       O=out \
+                       CC=clang \
+                       CROSS_COMPILE=arm-linux-gnueabi- \
+                       CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+                       AS=llvm-as \
+                       NM=llvm-nm \
+                       OBJCOPY=llvm-objcopy \
+                       OBJDUMP=llvm-objdump \
+                       STRIP=llvm-strip"
+
+          # 5. Eksekusi Build (Ganti a02_defconfig kalo beda namanya)
+          make $OPTS a02_defconfig
+          make -j$(nproc --all) $OPTS zImage-dtb 2>&1 | tee build.log
+
+      - name: Set Properties
+        id: props
+        run: echo "date=$(TZ=Asia/Jakarta date +%Y%m%d-%I%M%p)" >> $GITHUB_OUTPUT
+
+      - name: Debug & Verify Output
+        run: |
+          echo "--- Cek isi folder boot ---"
+          ls -lh out/arch/arm/boot/
+          
+          if [ -f "out/arch/arm/boot/zImage-dtb" ]; then
+            SIZE=$(stat -c%s "out/arch/arm/boot/zImage-dtb")
+            echo "✅ zImage-dtb ditemukan! Size: $SIZE bytes"
+            # Kalo size di bawah 5MB, anggap gagal
+            if [ "$SIZE" -lt 5000000 ]; then
+               echo "❌ Error: File terlalu kecil (Zonk)!"
+               exit 1
+            fi
+          else
+            echo "❌ ERROR: zImage-dtb GAK NEMU!"
+            exit 1
+          fi
+
+      - name: Make Zip
+        run: |
+          cd ${{ github.workspace }}/out/arch/arm/boot
+          export DEVICE_NAME=${{ github.event.inputs.DEVICE_NAME }}
+          export DATE_STR=${{ steps.props.outputs.date }}
+          
+          # Packing file kernel asli
+          zip -j9 ${DEVICE_NAME}-${DATE_STR}.zip zImage-dtb
+          cp *.zip ${{ github.workspace }}/
+
+      - name: Upload Release
+        uses: ncipollo/release-action@v1.12.0
+        with:
+          artifacts: "${{ github.workspace }}/*.zip"
+          name: RooXie Kernel for ${{ github.event.inputs.DEVICE_NAME }} - ${{ steps.props.outputs.date }}
+          tag: ${{ github.run_id }}-${{ steps.props.outputs.date }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ## Build Info
+            - **Device**: ${{ github.event.inputs.DEVICE_NAME }}
+            - **Compiler**: Proton Clang (LLVM)
+            - **Status**: Binary 3 / Android 11 Compatible.
+            - **Build Date**: ${{ steps.props.outputs.date }}
