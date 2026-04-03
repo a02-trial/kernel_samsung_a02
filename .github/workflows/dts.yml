@@ -1,0 +1,72 @@
+name: DTS Cherry-Pick Operator
+
+on:
+  workflow_dispatch: # Biar bisa loe klik manual dari tab Actions
+
+jobs:
+  transplant:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo A10 (Target Branch: coba_build)
+        uses: actions/checkout@v4
+        with:
+          ref: coba_build
+          fetch-depth: 0
+
+      - name: Setup Git Identity
+        run: |
+          git config --global user.name "Kernel-Transplant-Bot"
+          git config --global user.email "bot@github.com"
+
+      - name: Maling DTSI dari Repo A11 (Branch: 186)
+        run: |
+          # 1. Clone Repo A11 (Source)
+          git clone --depth 1 -b 186 https://github.com/rdbckp/a022f_kernel A11_SOURCE
+          
+          # 2. List File "Darah Suci" yang wajib ditimpa
+          # Tambahin file lain di sini kalo ngerasa ada yang kurang
+          FILES=(
+            "mt6357.dtsi"
+            "mt6357-regulator.dtsi"
+            "rt9458.dtsi"
+            "rt9466.dtsi"
+            "mtk_battery_prop.dtsi"
+            "modem-MT6739ap-pdata.dtsi"
+            "mtk_modem_v1_6739.dtsi"
+            "cust_mt6739_msdc.dtsi"
+            "mtk_usb.dtsi"
+            "trusty.dtsi"
+            "mt6739.dtsi"
+            "mtk_pinctrl.dtsi"
+            "mt6739-a022f.dts"
+          )
+
+          # 3. Jalur folder DTS di kernel arm
+          DTS_PATH="arch/arm/boot/dts"
+
+          # 4. Proses Eksekusi Timpa
+          echo "🚀 Memulai proses transplantasi..."
+          for file in "${FILES[@]}"; do
+            if [ -f "A11_SOURCE/$DTS_PATH/$file" ]; then
+              cp -f "A11_SOURCE/$DTS_PATH/$file" "$DTS_PATH/"
+              echo "✅ $file berhasil dicomot!"
+            else
+              echo "⚠️ $file GAK NEMU di Repo A11, skip..."
+            fi
+          done
+          
+          # Hapus sisa clone biar bersih
+          rm -rf A11_SOURCE
+
+      - name: Commit dan Push ke Branch coba_build
+        run: |
+          # Cek apa ada perubahan file
+          git add arch/arm/boot/dts/
+          
+          if git diff-index --quiet HEAD --; then
+            echo "Gak ada perubahan file, gak perlu push."
+          else
+            git commit -m "DTS: Sync jeroan dari Android 11 (Binary 3) - Branch 186"
+            git push origin coba_build
+            echo "🔥 File berhasil di-push ke branch coba_build!"
+          fi
