@@ -1,50 +1,52 @@
-name: Advanced DTS Scanner - Kernel A02
+name: Inspect DTS Folder Structure
 
 on:
-  workflow_dispatch:
-    inputs:
-      branch_name:
-        description: 'Branch kernel yang mau di-scan'
-        required: true
-        default: 'coba_build'
+  workflow_dispatch: # Jalankan manual dari tab Actions
 
 jobs:
-  analyze_dts:
+  list_structure:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch_name }}
+          ref: coba_build # Sesuaikan dengan branch loe
 
-      - name: "Detector Bug Reboot (Samsung A02)"
+      - name: Generate Folder Structure & Content
         run: |
-          REPORT="reboot_bug_report.txt"
-          echo "====================================================" > $REPORT
-          echo "       REBOOT BUG DETECTOR - TARGETED SCAN          " >> $REPORT
-          echo "====================================================" >> $REPORT
+          OUTPUT="dts_structure_report.txt"
+          TARGET_PATH="arch/arm/boot/dts"
 
-          # 1. CEK PSCI (Power State Coordination Interface)
-          echo -e "\n[!] MENCARI NODE PSCI (Penting buat SMC/HVC Reboot)" >> $REPORT
-          grep -rnl "compatible = \"arm,psci" . --include="*.dts*" | xargs -I {} sh -c 'echo "--- File: {} ---"; sed -n "/psci {/,/};/p" {}' >> $REPORT || echo "Node PSCI tidak ditemukan!" >> $REPORT
+          echo "====================================================" > $OUTPUT
+          echo "   DTS FOLDER STRUCTURE & CONTENT REPORT            " >> $OUTPUT
+          echo "   Path: $TARGET_PATH                               " >> $OUTPUT
+          echo "   Date: $(date)                                    " >> $OUTPUT
+          echo "====================================================" >> $OUTPUT
 
-          # 2. CEK WATCHDOG (MTK-WDT)
-          echo -e "\n[!] MENCARI NODE WATCHDOG (Eksekutor Reset)" >> $REPORT
-          grep -rnl "compatible = \"mediatek,.*-wdt\"" . --include="*.dts*" | xargs -I {} sh -c 'echo "--- File: {} ---"; sed -n "/wdt: watchdog@/,/};/p" {}' >> $REPORT || echo "Node Watchdog tidak ditemukan!" >> $REPORT
+          if [ -d "$TARGET_PATH" ]; then
+            echo -e "\n[1] TREE VIEW (Daftar File & Folder):" >> $OUTPUT
+            # Pakai find buat simulasi tree biar rapi
+            find "$TARGET_PATH" -maxdepth 3 -not -path '*/.*' >> $OUTPUT
 
-          # 3. CEK REBOOT MODE / RESET REASON
-          echo -e "\n[!] MENCARI CONFIG REBOOT-MODE" >> $REPORT
-          grep -rn "reboot-mode" . --include="*.dts*" -C 3 >> $REPORT || echo "Config reboot-mode tidak ditemukan." >> $REPORT
+            echo -e "\n[2] FILE CONTENT (Preview Isi File):" >> $OUTPUT
+            echo "----------------------------------------------------" >> $OUTPUT
+            
+            # Loop untuk ambil isi semua file .dts dan .dtsi di folder mediatek
+            find "$TARGET_PATH/mediatek" -name "*.dts*" 2>/dev/null | while read -r file; do
+              echo "FILE: $file" >> $OUTPUT
+              echo "----------------------------------------------------" >> $OUTPUT
+              cat "$file" >> $OUTPUT
+              echo -e "\n--- END OF FILE ---\n" >> $OUTPUT
+            done
+          else
+            echo "ERROR: Path $TARGET_PATH tidak ditemukan!" >> $OUTPUT
+          fi
 
-          # 4. CEK PMIC RESET (MT635x)
-          echo -e "\n[!] MENCARI RESET-METHOD DI PMIC" >> $REPORT
-          grep -rn "mediatek,.*-reset" . --include="*.dts*" -C 2 >> $REPORT || echo "Custom reset method tidak ditemukan." >> $REPORT
+          # Tampilkan di log biar bisa langsung baca
+          cat $OUTPUT
 
-          echo -e "\n================ SCAN SELESAI ================" >> $REPORT
-          cat $REPORT
-
-      - name: Upload Deep Analysis Result
+      - name: Upload Structure Report
         uses: actions/upload-artifact@v4
         with:
-          name: dts-pro-report
-          path: dts_analysis_report.txt
+          name: dts-folder-structure
+          path: dts_structure_report.txt
