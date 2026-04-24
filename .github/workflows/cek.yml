@@ -1,0 +1,57 @@
+name: Search DTS Keywords
+
+on:
+  workflow_dispatch:
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          ref: coba_build
+
+      - name: Search DTS files
+        run: |
+          echo "========================================" > result.txt
+          echo "DTS SEARCH REPORT - kernel_samsung_a02" >> result.txt
+          echo "Branch: coba_build" >> result.txt
+          echo "Date: $(date)" >> result.txt
+          echo "========================================" >> result.txt
+          echo "" >> result.txt
+
+          DTS_FILES=$(find . -name "*.dts" -o -name "*.dtsi" 2>/dev/null)
+          echo "DTS/DTSI files found:" >> result.txt
+          echo "$DTS_FILES" >> result.txt
+          echo "" >> result.txt
+
+          for keyword in reboot restart powerkey power_key wdt watchdog bootreason boot_reason warm_reset cold_boot pmic_reset sec_reboot; do
+            echo "========================================" >> result.txt
+            echo "KEYWORD: $keyword" >> result.txt
+            echo "========================================" >> result.txt
+            RESULTS=$(grep -rn --include="*.dts" --include="*.dtsi" -i "$keyword" . 2>/dev/null)
+            if [ -z "$RESULTS" ]; then
+              echo "(no results)" >> result.txt
+            else
+              echo "$RESULTS" >> result.txt
+            fi
+            echo "" >> result.txt
+          done
+
+          echo "========================================" >> result.txt
+          echo "FULL mt6739.dts content:" >> result.txt
+          echo "========================================" >> result.txt
+          find . -name "mt6739.dts" | while read f; do
+            echo "--- FILE: $f ---" >> result.txt
+            cat "$f" >> result.txt
+            echo "" >> result.txt
+          done
+
+          cat result.txt
+
+      - name: Upload result
+        uses: actions/upload-artifact@v3
+        with:
+          name: dts-search-result
+          path: result.txt
