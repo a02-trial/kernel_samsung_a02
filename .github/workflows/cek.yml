@@ -17,43 +17,30 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch_name }}
 
-      - name: Power Search & Deep Analysis
+      - name: "Detector Bug Reboot (Samsung A02)"
         run: |
-          REPORT="dts_analysis_report.txt"
-          
+          REPORT="reboot_bug_report.txt"
           echo "====================================================" > $REPORT
-          echo "       KERNEL DTS DEEP SCANNER - SAMSUNG A02        " >> $REPORT
-          echo "====================================================" >> $REPORT
-          echo "Branch  : ${{ github.event.inputs.branch_name }}" >> $REPORT
-          echo "Runtime : $(date)" >> $REPORT
+          echo "       REBOOT BUG DETECTOR - TARGETED SCAN          " >> $REPORT
           echo "====================================================" >> $REPORT
 
-          echo -e "\n[1] DTS TREE STRUCTURE" >> $REPORT
-          find . -maxdepth 10 -name "*.dts*" | sort >> $REPORT || echo "No DTS files found" >> $REPORT
+          # 1. CEK PSCI (Power State Coordination Interface)
+          echo -e "\n[!] MENCARI NODE PSCI (Penting buat SMC/HVC Reboot)" >> $REPORT
+          grep -rnl "compatible = \"arm,psci" . --include="*.dts*" | xargs -I {} sh -c 'echo "--- File: {} ---"; sed -n "/psci {/,/};/p" {}' >> $REPORT || echo "Node PSCI tidak ditemukan!" >> $REPORT
 
-          echo -e "\n[2] TARGETED KEYWORD SEARCH" >> $REPORT
-          KEYWORDS="reboot|restart|powerkey|watchdog|bootreason|warm_reset|pmic_reset|sec_reboot"
-          # Tambahkan || true agar tidak exit code 1 jika keyword tidak ketemu
-          grep -rnE -C 2 "$KEYWORDS" --include="*.dts" --include="*.dtsi" . >> $REPORT || echo "No keywords found." >> $REPORT
+          # 2. CEK WATCHDOG (MTK-WDT)
+          echo -e "\n[!] MENCARI NODE WATCHDOG (Eksekutor Reset)" >> $REPORT
+          grep -rnl "compatible = \"mediatek,.*-wdt\"" . --include="*.dts*" | xargs -I {} sh -c 'echo "--- File: {} ---"; sed -n "/wdt: watchdog@/,/};/p" {}' >> $REPORT || echo "Node Watchdog tidak ditemukan!" >> $REPORT
 
-          echo -e "\n[3] ANALYZING PMIC & POWER NODES" >> $REPORT
-          # Tambahkan || true di sini juga
-          grep -rn "compatible = \"mediatek,mt6k" . --include="*.dtsi" >> $REPORT || true
-          grep -rn "compatible = \"mediatek,pull-push-reset\"" . --include="*.dtsi" >> $REPORT || true
+          # 3. CEK REBOOT MODE / RESET REASON
+          echo -e "\n[!] MENCARI CONFIG REBOOT-MODE" >> $REPORT
+          grep -rn "reboot-mode" . --include="*.dts*" -C 3 >> $REPORT || echo "Config reboot-mode tidak ditemukan." >> $REPORT
 
-          echo -e "\n[4] MT6739 SPECIFIC CONFIGURATION" >> $REPORT
-          # Pastikan find f dapet hasil sebelum masuk loop
-          FILES=$(find . -name "mt6739.dts" -o -name "mt6739.dtsi")
-          if [ -z "$FILES" ]; then
-            echo "mt6739 dts/dtsi files not found." >> $REPORT
-          else
-            echo "$FILES" | while read -r file; do
-              echo "--- Source: $file ---" >> $REPORT
-              sed '/\/\*/,/\*\//d; /\/\//d' "$file" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT || true
-              echo -e "\n--- End of $file ---\n" >> $REPORT
-            done
-          fi
+          # 4. CEK PMIC RESET (MT635x)
+          echo -e "\n[!] MENCARI RESET-METHOD DI PMIC" >> $REPORT
+          grep -rn "mediatek,.*-reset" . --include="*.dts*" -C 2 >> $REPORT || echo "Custom reset method tidak ditemukan." >> $REPORT
 
+          echo -e "\n================ SCAN SELESAI ================" >> $REPORT
           cat $REPORT
 
       - name: Upload Deep Analysis Result
