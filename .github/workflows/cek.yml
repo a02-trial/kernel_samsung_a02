@@ -25,37 +25,35 @@ jobs:
           echo "       KERNEL DTS DEEP SCANNER - SAMSUNG A02        " >> $REPORT
           echo "====================================================" >> $REPORT
           echo "Branch  : ${{ github.event.inputs.branch_name }}" >> $REPORT
-          echo "Device  : SM-A022F (mt6739)" >> $REPORT
           echo "Runtime : $(date)" >> $REPORT
           echo "====================================================" >> $REPORT
 
-          # 1. Map Semua Struktur File DTS/DTSI (Biar enak liat hierarkinya)
           echo -e "\n[1] DTS TREE STRUCTURE" >> $REPORT
-          find . -maxdepth 10 -name "*.dts*" | sort >> $REPORT
+          find . -maxdepth 10 -name "*.dts*" | sort >> $REPORT || echo "No DTS files found" >> $REPORT
 
-          # 2. Smart Grep: Cari keyword sekaligus context 2 baris di sekitarnya
-          echo -e "\n[2] TARGETED KEYWORD SEARCH (Context View)" >> $REPORT
+          echo -e "\n[2] TARGETED KEYWORD SEARCH" >> $REPORT
           KEYWORDS="reboot|restart|powerkey|watchdog|bootreason|warm_reset|pmic_reset|sec_reboot"
-          
-          # Cari di semua file .dts dan .dtsi
+          # Tambahkan || true agar tidak exit code 1 jika keyword tidak ketemu
           grep -rnE -C 2 "$KEYWORDS" --include="*.dts" --include="*.dtsi" . >> $REPORT || echo "No keywords found." >> $REPORT
 
-          # 3. Spesifik Bedah Node PMIC & MTK Power (Sangat penting buat kasus reboot)
           echo -e "\n[3] ANALYZING PMIC & POWER NODES" >> $REPORT
-          # Nyari baris yang mengandung 'compatible' yang berhubungan dengan power/mtk
-          grep -rn "compatible = \"mediatek,mt6k" . --include="*.dtsi" >> $REPORT
-          grep -rn "compatible = \"mediatek,pull-push-reset\"" . --include="*.dtsi" >> $REPORT
+          # Tambahkan || true di sini juga
+          grep -rn "compatible = \"mediatek,mt6k" . --include="*.dtsi" >> $REPORT || true
+          grep -rn "compatible = \"mediatek,pull-push-reset\"" . --include="*.dtsi" >> $REPORT || true
 
-          # 4. Auto-Extract MT6739 Spesifik (Biar gak perlu cat manual semua)
           echo -e "\n[4] MT6739 SPECIFIC CONFIGURATION" >> $REPORT
-          find . -name "mt6739.dts" -o -name "mt6739.dtsi" | while read -r file; do
-            echo "--- Source: $file ---" >> $REPORT
-            # Menghilangkan comment biar lebih bersih dibaca
-            sed '/\/\*/,/\*\//d; /\/\//d' "$file" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT
-            echo -e "\n--- End of $file (Partial Preview) ---\n" >> $REPORT
-          done
+          # Pastikan find f dapet hasil sebelum masuk loop
+          FILES=$(find . -name "mt6739.dts" -o -name "mt6739.dtsi")
+          if [ -z "$FILES" ]; then
+            echo "mt6739 dts/dtsi files not found." >> $REPORT
+          else
+            echo "$FILES" | while read -r file; do
+              echo "--- Source: $file ---" >> $REPORT
+              sed '/\/\*/,/\*\//d; /\/\//d' "$file" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT || true
+              echo -e "\n--- End of $file ---\n" >> $REPORT
+            done
+          fi
 
-          # Munculin di Log GitHub biar bisa langsung intip
           cat $REPORT
 
       - name: Upload Deep Analysis Result
