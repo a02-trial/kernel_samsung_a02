@@ -51,7 +51,7 @@ jobs:
           find . -name "mt6739.dts" -o -name "mt6739.dtsi" | while read -r file; do
             echo "--- Source: $file ---" >> $REPORT
             # Menghilangkan comment biar lebih bersih dibaca
-            sed '/\/\*/,/\*\//d; /\/\//d' "$f" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT
+            sed '/\/\*/,/\*\//d; /\/\//d' "$file" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT
             echo -e "\n--- End of $file (Partial Preview) ---\n" >> $REPORT
           done
 
