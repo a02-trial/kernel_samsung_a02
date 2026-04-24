@@ -228,11 +228,7 @@ static int mtk_reset_handler(struct notifier_block *this, unsigned long mode,
 		mtk_misc_mark_fast();
 		#endif
 	} else {
-		/* Normal reboot - write reboot reason so bootloader auto-boots
-		 * without waiting for power button press.
-		 * 0x77665501 = standard MTK normal reboot magic number
-		 */
-		writel(0x77665501, wdt_base + WDT_NONRST_REG);
+		//do nothing
 	}
 
 	if (!arm_pm_restart) {
