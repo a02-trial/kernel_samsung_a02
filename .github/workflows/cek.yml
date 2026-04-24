@@ -1,10 +1,10 @@
-name: Fix Reboot Bug - Auto Path Finder
+name: Fix Reboot Bug Samsung A02
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # Jalankan manual
 
 jobs:
-  patch_kernel:
+  apply_patch:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Source
@@ -12,45 +12,49 @@ jobs:
         with:
           ref: coba_build
 
-      - name: "Sikat Bug Reboot (Auto Find Mode)"
+      - name: "Patching Watchdog & Warm Reboot"
         run: |
-          echo "===================================================="
-          echo "MENCARI FILE DTSI & DTS SECARA OTOMATIS..."
-          
-          # 1. Cari path asli mt6739.dtsi (biar gak tebak-tebakan jalur lagi)
-          TARGET_DTSI=$(find arch/arm/boot/dts -name "mt6739.dtsi" | head -n 1)
-          
-          if [ -z "$TARGET_DTSI" ]; then
-            echo "ERROR: File mt6739.dtsi gak ketemu di arch/arm/boot/dts!"
-            exit 1
+          # 1. Target file SoC (ap_mtk_mt6739.dtsi)
+          SOC_DTSI="arch/arm/boot/dts/ap_mtk_mt6739.dtsi"
+          # 2. Target file Board Common (mt6739-a02_common.dtsi)
+          BOARD_DTSI="arch/arm/boot/dts/a02/mt6739-a02_common.dtsi"
+
+          echo "Mengincar file: $SOC_DTSI dan $BOARD_DTSI"
+
+          # PATCH 1: Aktifkan Watchdog di level SoC
+          if [ -f "$SOC_DTSI" ]; then
+            echo "Aktifkan WDT di SoC level..."
+            # Ubah status disabled jadi okay pada node wdt
+            sed -i '/wdt: watchdog@10007000 {/,/status = "disabled";/s/status = "disabled";/status = "okay";/' "$SOC_DTSI"
+            
+            # Tambahkan instruksi warm-reboot agar hardware tahu ini REBOOT, bukan SHUTDOWN
+            if ! grep -q "mediatek,warm-reboot" "$SOC_DTSI"; then
+              sed -i '/status = "okay";/a \		mediatek,warm-reboot;' "$SOC_DTSI"
+            fi
           fi
-          
-          echo "DAPET! Filenya ada di: $TARGET_DTSI"
 
-          # 2. Patch: Aktifkan WDT & Tambah Warm Reboot
-          # Kita ganti status = "disabled" jadi "okay"
-          # Terus kita tambahin mediatek,warm-reboot biar gak shutdown
-          
-          echo "Applying patch to $TARGET_DTSI..."
-          
-          # Pakai sed yang lebih pinter: cari blok watchdog, ganti statusnya
-          sed -i '/wdt: watchdog@10007000 {/,/status = "disabled";/s/status = "disabled";/status = "okay";/' "$TARGET_DTSI"
-          
-          # Tambahin warm-reboot tepat di bawah status = "okay" biar afdol
-          sed -i '/status = "okay";/a \		mediatek,warm-reboot;' "$TARGET_DTSI"
+          # PATCH 2: Pastikan Board Level nggak nge-override jadi disabled
+          if [ -f "$BOARD_DTSI" ]; then
+            echo "Memastikan WDT aktif di Board level..."
+            if grep -q "&wdt" "$BOARD_DTSI"; then
+               # Kalau sudah ada node &wdt, pastikan statusnya okay
+               sed -i '/&wdt {/,/status = "disabled";/s/status = "disabled";/status = "okay";/' "$BOARD_DTSI"
+            else
+               # Kalau belum ada, tambahin di paling bawah
+               echo -e "\n&wdt {\n\tstatus = \"okay\";\n};" >> "$BOARD_DTSI"
+            fi
+          fi
 
-          # 3. Verifikasi (Biar loe liat sendiri hasilnya di log)
-          echo "===================================================="
-          echo "VERIFIKASI HASIL PATCH:"
-          grep -A 6 "watchdog@10007000" "$TARGET_DTSI"
-          echo "===================================================="
+          echo "Selesai! Cek hasil di bawah:"
+          echo "=== SoC WDT ==="
+          grep -A 5 "watchdog@10007000" "$SOC_DTSI" || echo "Node tidak ditemukan"
+          echo "=== Board WDT ==="
+          tail -n 10 "$BOARD_DTSI"
 
-      - name: "Upload Patch Log"
+      - name: "Commit & Push Perbaikan"
         run: |
-          find arch/arm/boot/dts -name "mt6739.dtsi" -exec grep -A 10 "watchdog@10007000" {} + > patch_result.txt
-          
-      - name: Archive Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: patched-dts-log
-          path: patch_result.txt
+          git config --global user.name "Kernel Fixer"
+          git config --global user.email "fix@kernel.com"
+          git add .
+          git commit -m "fix: enable watchdog and warm-reboot for SM-A022F" || echo "Gak ada perubahan"
+          git push origin coba_build
