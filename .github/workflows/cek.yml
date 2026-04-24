@@ -1,57 +1,65 @@
-name: Search DTS Keywords
+name: Advanced DTS Scanner - Kernel A02
 
 on:
   workflow_dispatch:
+    inputs:
+      branch_name:
+        description: 'Branch kernel yang mau di-scan'
+        required: true
+        default: 'coba_build'
 
 jobs:
-  search:
+  analyze_dts:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout Kernel Source
         uses: actions/checkout@v4
         with:
-          ref: coba_build
+          ref: ${{ github.event.inputs.branch_name }}
 
-      - name: Search DTS files
+      - name: Power Search & Deep Analysis
         run: |
-          echo "========================================" > result.txt
-          echo "DTS SEARCH REPORT - kernel_samsung_a02" >> result.txt
-          echo "Branch: coba_build" >> result.txt
-          echo "Date: $(date)" >> result.txt
-          echo "========================================" >> result.txt
-          echo "" >> result.txt
+          REPORT="dts_analysis_report.txt"
+          
+          echo "====================================================" > $REPORT
+          echo "       KERNEL DTS DEEP SCANNER - SAMSUNG A02        " >> $REPORT
+          echo "====================================================" >> $REPORT
+          echo "Branch  : ${{ github.event.inputs.branch_name }}" >> $REPORT
+          echo "Device  : SM-A022F (mt6739)" >> $REPORT
+          echo "Runtime : $(date)" >> $REPORT
+          echo "====================================================" >> $REPORT
 
-          DTS_FILES=$(find . -name "*.dts" -o -name "*.dtsi" 2>/dev/null)
-          echo "DTS/DTSI files found:" >> result.txt
-          echo "$DTS_FILES" >> result.txt
-          echo "" >> result.txt
+          # 1. Map Semua Struktur File DTS/DTSI (Biar enak liat hierarkinya)
+          echo -e "\n[1] DTS TREE STRUCTURE" >> $REPORT
+          find . -maxdepth 10 -name "*.dts*" | sort >> $REPORT
 
-          for keyword in reboot restart powerkey power_key wdt watchdog bootreason boot_reason warm_reset cold_boot pmic_reset sec_reboot; do
-            echo "========================================" >> result.txt
-            echo "KEYWORD: $keyword" >> result.txt
-            echo "========================================" >> result.txt
-            RESULTS=$(grep -rn --include="*.dts" --include="*.dtsi" -i "$keyword" . 2>/dev/null)
-            if [ -z "$RESULTS" ]; then
-              echo "(no results)" >> result.txt
-            else
-              echo "$RESULTS" >> result.txt
-            fi
-            echo "" >> result.txt
+          # 2. Smart Grep: Cari keyword sekaligus context 2 baris di sekitarnya
+          echo -e "\n[2] TARGETED KEYWORD SEARCH (Context View)" >> $REPORT
+          KEYWORDS="reboot|restart|powerkey|watchdog|bootreason|warm_reset|pmic_reset|sec_reboot"
+          
+          # Cari di semua file .dts dan .dtsi
+          grep -rnE -C 2 "$KEYWORDS" --include="*.dts" --include="*.dtsi" . >> $REPORT || echo "No keywords found." >> $REPORT
+
+          # 3. Spesifik Bedah Node PMIC & MTK Power (Sangat penting buat kasus reboot)
+          echo -e "\n[3] ANALYZING PMIC & POWER NODES" >> $REPORT
+          # Nyari baris yang mengandung 'compatible' yang berhubungan dengan power/mtk
+          grep -rn "compatible = \"mediatek,mt6k" . --include="*.dtsi" >> $REPORT
+          grep -rn "compatible = \"mediatek,pull-push-reset\"" . --include="*.dtsi" >> $REPORT
+
+          # 4. Auto-Extract MT6739 Spesifik (Biar gak perlu cat manual semua)
+          echo -e "\n[4] MT6739 SPECIFIC CONFIGURATION" >> $REPORT
+          find . -name "mt6739.dts" -o -name "mt6739.dtsi" | while read -r file; do
+            echo "--- Source: $file ---" >> $REPORT
+            # Menghilangkan comment biar lebih bersih dibaca
+            sed '/\/\*/,/\*\//d; /\/\//d' "$f" | grep -v '^[[:space:]]*$' | head -n 500 >> $REPORT
+            echo -e "\n--- End of $file (Partial Preview) ---\n" >> $REPORT
           done
 
-          echo "========================================" >> result.txt
-          echo "FULL mt6739.dts content:" >> result.txt
-          echo "========================================" >> result.txt
-          find . -name "mt6739.dts" | while read f; do
-            echo "--- FILE: $f ---" >> result.txt
-            cat "$f" >> result.txt
-            echo "" >> result.txt
-          done
+          # Munculin di Log GitHub biar bisa langsung intip
+          cat $REPORT
 
-          cat result.txt
-
-      - name: Upload result
+      - name: Upload Deep Analysis Result
         uses: actions/upload-artifact@v4
         with:
-          name: dts-search-result
-          path: result.txt
+          name: dts-pro-report
+          path: dts_analysis_report.txt
