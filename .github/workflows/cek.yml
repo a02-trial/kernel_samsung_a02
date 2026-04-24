@@ -1,52 +1,56 @@
-name: Inspect DTS Folder Structure
+name: Fix Reboot Bug - Auto Path Finder
 
 on:
-  workflow_dispatch: # Jalankan manual dari tab Actions
+  workflow_dispatch:
 
 jobs:
-  list_structure:
+  patch_kernel:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Kernel Source
+      - name: Checkout Source
         uses: actions/checkout@v4
         with:
-          ref: coba_build # Sesuaikan dengan branch loe
+          ref: coba_build
 
-      - name: Generate Folder Structure & Content
+      - name: "Sikat Bug Reboot (Auto Find Mode)"
         run: |
-          OUTPUT="dts_structure_report.txt"
-          TARGET_PATH="arch/arm/boot/dts"
-
-          echo "====================================================" > $OUTPUT
-          echo "   DTS FOLDER STRUCTURE & CONTENT REPORT            " >> $OUTPUT
-          echo "   Path: $TARGET_PATH                               " >> $OUTPUT
-          echo "   Date: $(date)                                    " >> $OUTPUT
-          echo "====================================================" >> $OUTPUT
-
-          if [ -d "$TARGET_PATH" ]; then
-            echo -e "\n[1] TREE VIEW (Daftar File & Folder):" >> $OUTPUT
-            # Pakai find buat simulasi tree biar rapi
-            find "$TARGET_PATH" -maxdepth 3 -not -path '*/.*' >> $OUTPUT
-
-            echo -e "\n[2] FILE CONTENT (Preview Isi File):" >> $OUTPUT
-            echo "----------------------------------------------------" >> $OUTPUT
-            
-            # Loop untuk ambil isi semua file .dts dan .dtsi di folder mediatek
-            find "$TARGET_PATH/mediatek" -name "*.dts*" 2>/dev/null | while read -r file; do
-              echo "FILE: $file" >> $OUTPUT
-              echo "----------------------------------------------------" >> $OUTPUT
-              cat "$file" >> $OUTPUT
-              echo -e "\n--- END OF FILE ---\n" >> $OUTPUT
-            done
-          else
-            echo "ERROR: Path $TARGET_PATH tidak ditemukan!" >> $OUTPUT
+          echo "===================================================="
+          echo "MENCARI FILE DTSI & DTS SECARA OTOMATIS..."
+          
+          # 1. Cari path asli mt6739.dtsi (biar gak tebak-tebakan jalur lagi)
+          TARGET_DTSI=$(find arch/arm/boot/dts -name "mt6739.dtsi" | head -n 1)
+          
+          if [ -z "$TARGET_DTSI" ]; then
+            echo "ERROR: File mt6739.dtsi gak ketemu di arch/arm/boot/dts!"
+            exit 1
           fi
+          
+          echo "DAPET! Filenya ada di: $TARGET_DTSI"
 
-          # Tampilkan di log biar bisa langsung baca
-          cat $OUTPUT
+          # 2. Patch: Aktifkan WDT & Tambah Warm Reboot
+          # Kita ganti status = "disabled" jadi "okay"
+          # Terus kita tambahin mediatek,warm-reboot biar gak shutdown
+          
+          echo "Applying patch to $TARGET_DTSI..."
+          
+          # Pakai sed yang lebih pinter: cari blok watchdog, ganti statusnya
+          sed -i '/wdt: watchdog@10007000 {/,/status = "disabled";/s/status = "disabled";/status = "okay";/' "$TARGET_DTSI"
+          
+          # Tambahin warm-reboot tepat di bawah status = "okay" biar afdol
+          sed -i '/status = "okay";/a \		mediatek,warm-reboot;' "$TARGET_DTSI"
 
-      - name: Upload Structure Report
+          # 3. Verifikasi (Biar loe liat sendiri hasilnya di log)
+          echo "===================================================="
+          echo "VERIFIKASI HASIL PATCH:"
+          grep -A 6 "watchdog@10007000" "$TARGET_DTSI"
+          echo "===================================================="
+
+      - name: "Upload Patch Log"
+        run: |
+          find arch/arm/boot/dts -name "mt6739.dtsi" -exec grep -A 10 "watchdog@10007000" {} + > patch_result.txt
+          
+      - name: Archive Result
         uses: actions/upload-artifact@v4
         with:
-          name: dts-folder-structure
-          path: dts_structure_report.txt
+          name: patched-dts-log
+          path: patch_result.txt
