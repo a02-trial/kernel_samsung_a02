@@ -33,21 +33,6 @@ jobs:
           git clone --depth 1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc-aarch64
           cd ..
 
-      - name: "Auto Patch Reboot Bug"
-        run: |
-          # Cari file dts utama
-          DTS_FILE=$(find . -name "mt6739.dts")
-          
-          echo "Patching $DTS_FILE..."
-          
-          # Ubah status wdt dari disabled ke okay
-          sed -i 's/status = "disabled";/status = "okay";/g' arch/arm64/boot/dts/mediatek/mt6739.dtsi
-          
-          # Tambahin instruksi warm reboot di akhir file dts utama
-          echo "&wdt { status = \"okay\"; mediatek,warm-reboot; };" >> $DTS_FILE
-          
-          echo "Patch Selesai!"
-
       - name: Start Building Kernel
         run: |
           # Setup Path GCC sesuai struktur loe
