@@ -35,3 +35,7 @@
 &msdc1 {
 	cd_level = /bits/ 8 <MSDC_CD_HIGH>;
 };
+
+&wdt {
+	status = "okay";
+};
