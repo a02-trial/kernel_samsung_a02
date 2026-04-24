@@ -100,7 +100,17 @@ static void sec_reboot(enum reboot_mode reboot_mode, const char *cmd)
 
 	/* LPM mode prevention */
 	LAST_RR_SET(is_power_reset, SEC_POWER_RESET);
-	LAST_RR_SET(power_reset_reason, SEC_RESET_REASON_UNKNOWN);
+
+	if (!cmd) {
+		/* Plain reboot (no cmd) - use FWUP reason so LK treats
+		 * this as a warm reboot and auto-boots without waiting
+		 * for power button press. UNKNOWN causes LK to cold-boot.
+		 */
+		LAST_RR_SET(power_reset_reason, SEC_RESET_REASON_FWUP);
+	} else {
+		/* Default for unknown cmd */
+		LAST_RR_SET(power_reset_reason, SEC_RESET_REASON_UNKNOWN);
+	}
 
 	if (cmd) {
 		unsigned long value;
