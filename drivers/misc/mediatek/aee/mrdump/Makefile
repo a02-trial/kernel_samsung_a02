@@ -25,7 +25,7 @@ mrdump-objs-y := \
 	mrdump_panic.o
 
 mrdump-objs-$(CONFIG_ARM) += mrdump_arm.o
-mrdump-objs-$(CONFIG_ARM_PSCI) += mrdump_panic_wdt.o
+mrdump-objs-y += mrdump_panic_wdt.o
 
 mrdump-objs-$(CONFIG_ARM64) += \
 	mrdump_arm64.o \
